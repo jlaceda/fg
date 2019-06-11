@@ -1,14 +1,11 @@
+let { init, Sprite, GameLoop, initKeys, keyPressed } = kontra;
+let { canvas, context } = init();
+let ws = new WebSocket("ws://127.0.0.1:8080");
+context.imageSmoothingEnabled = false;
+initKeys();
+
 let FRAMECOUNT = 0;
 let ATTACK_LENGTH = 10;
-
-// keyboard stuff
-const aKey = 65;
-const dKey = 68;
-const gKey = 71;
-
-const leftKey = 37;
-const rightKey = 39;
-const num0Key = 48;
 
 // enums
 const DIRECTION = Object.freeze({
@@ -34,7 +31,7 @@ const PLAYER_STATE = Object.freeze({
 });
 
 // STATES
-let gameState = SCENE.FIGHT;
+let scene = SCENE.FIGHT;
 let previousInput = INPUT.NOOP;
 let inputBuffer = [];
 
@@ -43,35 +40,44 @@ let playerState = {
 	direction: DIRECTION.RIGHT,
 }
 
-// uses controlState
+let player2State = {
+	state: PLAYER_STATE.STANDING,
+	direction: DIRECTION.RIGHT,
+}
+
 // writes to inputBuffer
-document.onkeydown = function(e) {
-	e.preventDefault();
-	console.log(e);
-	if (e.keyCode === gKey) {
+const getLocalButtons = () => {
+	console.log('getLocalButtons');
+	if (keyPressed('j')) {
 		inputBuffer.push(INPUT.ATTACK);
-	} else if (e.keyCode === aKey) {
+	} else if (keyPressed('s')) {
 		inputBuffer.push(INPUT.LEFT);
-	} else if (e.keyCode === dKey) {
+	} else if (keyPressed('f')) {
 		inputBuffer.push(INPUT.RIGHT);
 	} else {
 		inputBuffer.push(INPUT.NOOP);
 	}
-	console.log(inputBuffer)
-};
+}
+
+const sendButtons = () => {
+	console.log('sendButtons');
+	ws.send(JSON.stringify({
+		type: 'BUTTONS',
+		frame: FRAMECOUNT,
+		inputBuffer: inputBuffer
+	}));
+}
 
 // shifts inputBuffer
 // writes playerState
 const playerControl = () => {
-	console.log(inputBuffer)
-
+	console.log('playerControl');
 	// do nothing if inputBuffer is empty
 	if (inputBuffer.length < 1) {
-		playerState.state = PLAYER_STATE.STANDING;
 		return;
 	}
 
-	const input = inputBuffer.shift();
+	const input = inputBuffer[0];
 
 	switch (input) {
 		case INPUT.ATTACK:
@@ -80,42 +86,66 @@ const playerControl = () => {
 			}
 			break;
 		case INPUT.RIGHT:
-			if (playerState.direction === DIRECTION.RIGHT) {
-				playerState.state = PLAYER_STATE.WALKING
-			} else {
-				playerState.direction = DIRECTION.RIGHT;
-				playerState.state = PLAYER_STATE.STANDING;
-			}
+			playerState.direction = DIRECTION.RIGHT
+			playerState.state = PLAYER_STATE.WALKING
 			break;
 		case INPUT.LEFT:
-			if (playerState.direction === DIRECTION.LEFT) {
-				playerState.state = PLAYER_STATE.WALKING
-			} else {
-				playerState.direction = DIRECTION.LEFT;
-				playerState.state = PLAYER_STATE.STANDING;
-			}
+			playerState.direction = DIRECTION.LEFT
+			playerState.state = PLAYER_STATE.WALKING
 			break;
 		default:
-			if (playerState.state === PLAYER_STATE.WALKING) {
+			if (playerState.state === PLAYER_STATE.WALKING
+				|| playerState.state === PLAYER_STATE.ATTACKING) {
 				playerState.state = PLAYER_STATE.STANDING;
 			}
 			break;
 	}
 }
 
-let { init, Sprite, GameLoop } = kontra;
-let { canvas, context } = init();
 
-context.imageSmoothingEnabled = false;
+ws.onmessage = function(event) {
+	var msg = JSON.parse(JSON.parse(event.data));
+	if (msg.inputBuffer) {
+		var input = msg.inputBuffer[0];
+		switch (input) {
+			case INPUT.ATTACK:
+				if (!player2State.attacking) {
+					player2State.state = PLAYER_STATE.ATTACKING;
+				}
+				break;
+			case INPUT.RIGHT:
+					player2State.direction = DIRECTION.RIGHT
+					player2State.state = PLAYER_STATE.WALKING
+				break;
+			case INPUT.LEFT:
+					player2State.direction = DIRECTION.LEFT
+					player2State.state = PLAYER_STATE.WALKING
+				break;
+			default:
+				if (player2State.state === PLAYER_STATE.WALKING
+					|| player2State.state === PLAYER_STATE.ATTACKING) {
+						player2State.state = PLAYER_STATE.STANDING;
+				}
+				break;
+		}
+	}
+}
+
+const player2Control = () => {
+	console.log('player2Control');
+}
 
 // reads playerState
 const playerSprite = Sprite({
-	x: 100,
-	y: 100,
+	x: 50,
+	y: 200,
 	color: 'grey',
 	width: 20,
 	height: 40,
+	anchor: {x:0.5, y:1},
 	update: function() {
+		console.log('playerSprite.update');
+		this.advance();
 
 		if (playerState.state === PLAYER_STATE.ATTACKING) {
 			this.color = 'red';
@@ -125,27 +155,64 @@ const playerSprite = Sprite({
 
 		if (playerState.state === PLAYER_STATE.WALKING) {
 			if (playerState.direction === DIRECTION.LEFT) {
-				this.x--;
-				return;
+				this.dx = -2.5;
 			}
 			if (playerState.direction === DIRECTION.RIGHT) {
-				this.x++;
-				return;
+				this.dx = 2.5;
 			}
+		} else {
+			this.dx = 0;
+		}
+	}
+});
+
+const player2Sprite = Sprite({
+	x: 200,
+	y: 200,
+	color: 'grey',
+	width: 20,
+	height: 40,
+	anchor: {x:0.5, y:1},
+	update: function() {
+		console.log('playerSprite.update');
+		this.advance();
+
+		if (player2State.state === PLAYER_STATE.ATTACKING) {
+			this.color = 'red';
+		} else {
+			this.color = 'grey';
+		}
+
+		if (player2State.state === PLAYER_STATE.WALKING) {
+			if (player2State.direction === DIRECTION.LEFT) {
+				this.dx = -2.5;
+			}
+			if (player2State.direction === DIRECTION.RIGHT) {
+				this.dx = 2.5;
+			}
+		} else {
+			this.dx = 0;
 		}
 	}
 });
 
 const update = () => {
 	FRAMECOUNT++;
+	getLocalButtons();
 	playerControl();
 	playerSprite.update();
+	player2Sprite.update()
+	sendButtons();
+	const _ = inputBuffer.shift();
 };
 
 const render = () => {
 	playerSprite.render();
+	player2Sprite.render()
 }
 
 let loop = GameLoop({ update, render });
 
-loop.start();
+ws.onopen = function (event) {
+	loop.start();
+}
