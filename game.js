@@ -32,108 +32,46 @@ const PLAYER_STATE = Object.freeze({
 
 // STATES
 let scene = SCENE.FIGHT;
-let previousInput = INPUT.NOOP;
-let inputBuffer = [];
+let currentInput = INPUT.NOOP;
 
-let playerState = {
-	state: PLAYER_STATE.STANDING,
-	direction: DIRECTION.RIGHT,
-}
-
-let player2State = {
-	state: PLAYER_STATE.STANDING,
-	direction: DIRECTION.RIGHT,
-}
+let playerId = 0;
 
 // writes to inputBuffer
 const getLocalButtons = () => {
-	console.log('getLocalButtons');
+	
 	if (keyPressed('j')) {
-		inputBuffer.push(INPUT.ATTACK);
+		currentInput = INPUT.ATTACK;
 	} else if (keyPressed('s')) {
-		inputBuffer.push(INPUT.LEFT);
+		currentInput = INPUT.LEFT;
 	} else if (keyPressed('f')) {
-		inputBuffer.push(INPUT.RIGHT);
+		currentInput = INPUT.RIGHT;
 	} else {
-		inputBuffer.push(INPUT.NOOP);
+		currentInput = INPUT.NOOP;
 	}
 }
 
 const sendButtons = () => {
-	console.log('sendButtons');
 	ws.send(JSON.stringify({
-		type: 'BUTTONS',
-		frame: FRAMECOUNT,
-		inputBuffer: inputBuffer
+		player: playerId,
+		input: currentInput
 	}));
 }
 
-// shifts inputBuffer
-// writes playerState
-const playerControl = () => {
-	console.log('playerControl');
-	// do nothing if inputBuffer is empty
-	if (inputBuffer.length < 1) {
-		return;
-	}
-
-	const input = inputBuffer[0];
-
-	switch (input) {
-		case INPUT.ATTACK:
-			if (!playerState.attacking) {
-				playerState.state = PLAYER_STATE.ATTACKING;
-			}
-			break;
-		case INPUT.RIGHT:
-			playerState.direction = DIRECTION.RIGHT
-			playerState.state = PLAYER_STATE.WALKING
-			break;
-		case INPUT.LEFT:
-			playerState.direction = DIRECTION.LEFT
-			playerState.state = PLAYER_STATE.WALKING
-			break;
-		default:
-			if (playerState.state === PLAYER_STATE.WALKING
-				|| playerState.state === PLAYER_STATE.ATTACKING) {
-				playerState.state = PLAYER_STATE.STANDING;
-			}
-			break;
-	}
-}
-
+let WORLD = {};
 
 ws.onmessage = function(event) {
-	var msg = JSON.parse(JSON.parse(event.data));
-	if (msg.inputBuffer) {
-		var input = msg.inputBuffer[0];
-		switch (input) {
-			case INPUT.ATTACK:
-				if (!player2State.attacking) {
-					player2State.state = PLAYER_STATE.ATTACKING;
-				}
-				break;
-			case INPUT.RIGHT:
-					player2State.direction = DIRECTION.RIGHT
-					player2State.state = PLAYER_STATE.WALKING
-				break;
-			case INPUT.LEFT:
-					player2State.direction = DIRECTION.LEFT
-					player2State.state = PLAYER_STATE.WALKING
-				break;
-			default:
-				if (player2State.state === PLAYER_STATE.WALKING
-					|| player2State.state === PLAYER_STATE.ATTACKING) {
-						player2State.state = PLAYER_STATE.STANDING;
-				}
-				break;
-		}
+	var msg = JSON.parse(event.data);
+	console.log(msg);
+	if (msg.refused) {
+		throw new Error("game is full");
 	}
+	if (msg.connected) {
+		playerId = msg.playerId;
+		return;
+	}
+	WORLD = msg;
 }
 
-const player2Control = () => {
-	console.log('player2Control');
-}
 
 // reads playerState
 const playerSprite = Sprite({
@@ -144,25 +82,14 @@ const playerSprite = Sprite({
 	height: 40,
 	anchor: {x:0.5, y:1},
 	update: function() {
-		console.log('playerSprite.update');
-		this.advance();
 
-		if (playerState.state === PLAYER_STATE.ATTACKING) {
+		if (WORLD['1'].state === PLAYER_STATE.ATTACKING) {
 			this.color = 'red';
 		} else {
 			this.color = 'grey';
 		}
 
-		if (playerState.state === PLAYER_STATE.WALKING) {
-			if (playerState.direction === DIRECTION.LEFT) {
-				this.dx = -2.5;
-			}
-			if (playerState.direction === DIRECTION.RIGHT) {
-				this.dx = 2.5;
-			}
-		} else {
-			this.dx = 0;
-		}
+		this.x = WORLD['1'].x;
 	}
 });
 
@@ -174,36 +101,24 @@ const player2Sprite = Sprite({
 	height: 40,
 	anchor: {x:0.5, y:1},
 	update: function() {
-		console.log('playerSprite.update');
-		this.advance();
-
-		if (player2State.state === PLAYER_STATE.ATTACKING) {
+		
+		if (WORLD['2'].state === PLAYER_STATE.ATTACKING) {
 			this.color = 'red';
 		} else {
 			this.color = 'grey';
 		}
 
-		if (player2State.state === PLAYER_STATE.WALKING) {
-			if (player2State.direction === DIRECTION.LEFT) {
-				this.dx = -2.5;
-			}
-			if (player2State.direction === DIRECTION.RIGHT) {
-				this.dx = 2.5;
-			}
-		} else {
-			this.dx = 0;
-		}
+		this.x = WORLD['2'].x;
 	}
 });
 
+
+
 const update = () => {
-	FRAMECOUNT++;
 	getLocalButtons();
-	playerControl();
-	playerSprite.update();
-	player2Sprite.update()
 	sendButtons();
-	const _ = inputBuffer.shift();
+	playerSprite.update()
+	player2Sprite.update()
 };
 
 const render = () => {
@@ -214,5 +129,6 @@ const render = () => {
 let loop = GameLoop({ update, render });
 
 ws.onopen = function (event) {
+	console.log(event);
 	loop.start();
 }
